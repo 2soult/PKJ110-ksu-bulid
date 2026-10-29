@@ -148,13 +148,17 @@ jobs:
             sed -i '/ksu_seccomp_allow_cache(current->seccomp.filter, __NR_reboot);/d' "$F"
             perl -0pi -e 's/\s*if \(current->seccomp\.mode == SECCOMP_MODE_FILTER &&\s*\n\s*current->seccomp\.filter\) \{\n(.*?)\n\s*\}//s' "$F"
             sed -i '0,/#include <linux\/compiler.h>/s//#include <linux\/compiler.h>\n#include <asm\/unistd.h>/' "$F"
-            echo "patched $1 setuid_hook.c"
+            # register_trace_prio_* is a 6.12+ tracepoint API; vendor 6.6 trees
+            # only have the plain register_trace_sys_enter variant.
+            F2="$PWD/$1/kernel/hook/syscall_hook_manager.c"
+            [ -f "$F2" ] && sed -i 's/register_trace_prio_sys_enter(ksu_sys_enter_handler, NULL, INT_MIN)/register_trace_sys_enter(ksu_sys_enter_handler, NULL)/' "$F2"
+            echo "patched $1 setuid_hook.c / syscall_hook_manager.c"
           }
           patch_fork next
           MDIR="$PWD/next/kernel"
           KDIR="$PWD/kernel"
           make -C "$KDIR" ARCH=arm64 LLVM=1 M="$MDIR" src="$MDIR" modules \
-            CONFIG_KSU=m KBUILD_MODPOST_WARN=1 2>&1 | tail -20 || { echo 'NEXT_BUILD_FAILED (see tail above)'; exit 1; }
+            CONFIG_KSU=m KBUILD_MODPOST_WARN=1 2>&1 | tee next-build.log | tail -25 || { echo 'NEXT_BUILD_FAILED (errors below)'; grep -n 'error:' next-build.log | head -30; exit 1; }
           ls -l "$MDIR/kernelsu.ko" 2>/dev/null || { echo 'NO kernelsu.ko produced'; find "$MDIR" -maxdepth 1 -name '*.ko' -o -name '*.o' | head; exit 1; }
           cp "$MDIR/kernelsu.ko" ksu-base-next.ko
           echo "built next -> ksu-base-next.ko"
@@ -173,13 +177,15 @@ jobs:
             sed -i '/ksu_seccomp_allow_cache(current->seccomp.filter, __NR_reboot);/d' "$F"
             perl -0pi -e 's/\s*if \(current->seccomp\.mode == SECCOMP_MODE_FILTER &&\s*\n\s*current->seccomp\.filter\) \{\n(.*?)\n\s*\}//s' "$F"
             sed -i '0,/#include <linux\/compiler.h>/s//#include <linux\/compiler.h>\n#include <asm\/unistd.h>/' "$F"
-            echo "patched $1 setuid_hook.c"
+            F2="$PWD/$1/kernel/hook/syscall_hook_manager.c"
+            [ -f "$F2" ] && sed -i 's/register_trace_prio_sys_enter(ksu_sys_enter_handler, NULL, INT_MIN)/register_trace_sys_enter(ksu_sys_enter_handler, NULL)/' "$F2"
+            echo "patched $1 setuid_hook.c / syscall_hook_manager.c"
           }
           patch_fork bakasu
           MDIR="$PWD/$M_DIR"
           KDIR="$PWD/kernel"
           make -C "$KDIR" ARCH=arm64 LLVM=1 M="$MDIR" src="$MDIR" modules \
-            CONFIG_KSU=m KBUILD_MODPOST_WARN=1 2>&1 | tail -20 || { echo 'BAKASU_BUILD_FAILED (see tail above)'; exit 1; }
+            CONFIG_KSU=m KBUILD_MODPOST_WARN=1 2>&1 | tee bakasu-build.log | tail -25 || { echo 'BAKASU_BUILD_FAILED (errors below)'; grep -n 'error:' bakasu-build.log | head -30; exit 1; }
           ls -l "$MDIR/kernelsu.ko" 2>/dev/null || { echo 'NO kernelsu.ko produced'; find "$MDIR" -maxdepth 1 -name '*.ko' -o -name '*.o' | head; exit 1; }
           cp "$MDIR/kernelsu.ko" ksu-base-bakasu.ko
           echo "built bakasu -> ksu-base-bakasu.ko"
@@ -198,13 +204,15 @@ jobs:
             sed -i '/ksu_seccomp_allow_cache(current->seccomp.filter, __NR_reboot);/d' "$F"
             perl -0pi -e 's/\s*if \(current->seccomp\.mode == SECCOMP_MODE_FILTER &&\s*\n\s*current->seccomp\.filter\) \{\n(.*?)\n\s*\}//s' "$F"
             sed -i '0,/#include <linux\/compiler.h>/s//#include <linux\/compiler.h>\n#include <asm\/unistd.h>/' "$F"
-            echo "patched $1 setuid_hook.c"
+            F2="$PWD/$1/kernel/hook/syscall_hook_manager.c"
+            [ -f "$F2" ] && sed -i 's/register_trace_prio_sys_enter(ksu_sys_enter_handler, NULL, INT_MIN)/register_trace_sys_enter(ksu_sys_enter_handler, NULL)/' "$F2"
+            echo "patched $1 setuid_hook.c / syscall_hook_manager.c"
           }
           patch_fork sukisu
           MDIR="$PWD/$M_DIR"
           KDIR="$PWD/kernel"
           make -C "$KDIR" ARCH=arm64 LLVM=1 M="$MDIR" src="$MDIR" modules \
-            CONFIG_KSU=m KBUILD_MODPOST_WARN=1 2>&1 | tail -20 || { echo 'SUKISU_BUILD_FAILED (see tail above)'; exit 1; }
+            CONFIG_KSU=m KBUILD_MODPOST_WARN=1 2>&1 | tee sukisu-build.log | tail -25 || { echo 'SUKISU_BUILD_FAILED (errors below)'; grep -n 'error:' sukisu-build.log | head -30; exit 1; }
           ls -l "$MDIR/kernelsu.ko" 2>/dev/null || { echo 'NO kernelsu.ko produced'; find "$MDIR" -maxdepth 1 -name '*.ko' -o -name '*.o' | head; exit 1; }
           cp "$MDIR/kernelsu.ko" ksu-base-sukisu.ko
           echo "built sukisu -> ksu-base-sukisu.ko"
