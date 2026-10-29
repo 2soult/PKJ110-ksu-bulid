@@ -73,7 +73,7 @@ jobs:
           mkdir -p /opt/clang
           curl -L --fail \
             "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/${{ inputs.clang_version }}.tar.gz" \
-            -o /tmp/clang.tar.gz
+            -o /tmp/clang.tar.gz || { echo 'CLANG_DOWNLOAD_FAILED (check clang_version input or leave empty for apt clang)'; exit 1; }
           tar -xzf /tmp/clang.tar.gz -C /opt/clang
           ls /opt/clang | head
 
@@ -88,24 +88,44 @@ jobs:
 
       - name: Configure kernel tree (modules_prepare)
         run: |
+          echo "--- toolchain ---"
+          if [ -d /opt/clang/bin ]; then
+            /opt/clang/bin/clang --version | head -1
+          else
+            clang --version | head -1 || true
+            gcc --version | head -1 || true
+          fi
+          echo "--- kernel version ---"
           cd kernel
+          grep -E '^(VERSION|PATCHLEVEL|SUBLEVEL|EXTRAVERSION)' Makefile | tr -d '\n'; echo
           CFG="${{ inputs.defconfig }}"
           if [ -z "$CFG" ]; then
-            CFG=$(ls arch/arm64/configs/vendor/*_defconfig 2>/dev/null | head -1 | xargs -n1 basename 2>/dev/null)
-            [ -z "$CFG" ] && CFG=$(ls arch/arm64/configs/*defconfig 2>/dev/null | head -1 | xargs -n1 basename)
+            for d in arch/arm64/configs/vendor arch/arm64/configs; do
+              [ -d "$d" ] || continue
+              CFG=$(find "$d" -maxdepth 2 -name '*defconfig' 2>/dev/null | sort | head -1 | xargs -n1 basename 2>/dev/null)
+              [ -n "$CFG" ] && break
+            done
           fi
-          [ -n "$CFG" ] || { echo 'ERROR: no defconfig found, set the defconfig input'; exit 1; }
-          echo "Using defconfig: $CFG"
-          make ARCH=arm64 LLVM=1 "$CFG"
+          if [ -z "$CFG" ]; then
+            echo 'ERROR: no defconfig found (set the defconfig input manually)'
+            ls arch/arm64/configs 2>&1 | head -20
+            exit 1
+          fi
+          echo "USING_CFG=$CFG"
+          make ARCH=arm64 LLVM=1 "$CFG" || { echo 'MAKE_DEFCONFIG_FAILED'; exit 1; }
           # Runtime loading is handled by the custom loader (vermagic rewrite +
           # syms.txt symbol resolution), so modversions is disabled to match the
           # known-good modules (their __versions section is empty).
           scripts/config --disable CONFIG_MODVERSIONS
+          scripts/config --enable CONFIG_MODULES
           scripts/config --enable CONFIG_KALLSYMS
           scripts/config --enable CONFIG_KPROBES
           scripts/config --enable CONFIG_MODULE_UNLOAD
-          make ARCH=arm64 LLVM=1 olddefconfig
-          make ARCH=arm64 LLVM=1 modules_prepare 2>&1 | tail -5
+          make ARCH=arm64 LLVM=1 olddefconfig || { echo 'OLDEFCONFIG_FAILED'; exit 1; }
+          echo "--- config sanity ---"
+          grep -E 'CONFIG_MODULES=|CONFIG_MODVERSIONS|CONFIG_KPROBES=|CONFIG_MODULE_UNLOAD' .config || true
+          make ARCH=arm64 LLVM=1 modules_prepare 2>&1 | tail -25 || { echo 'MODULES_PREPARE_FAILED (see tail above)'; exit 1; }
+          echo "MODULES_PREPARE_OK"
 
       - name: Build KernelSU-Next module
         if: inputs.next_repo != ''
