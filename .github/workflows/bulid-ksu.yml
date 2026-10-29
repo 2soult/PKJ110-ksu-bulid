@@ -88,6 +88,7 @@ jobs:
 
       - name: Configure kernel tree (modules_prepare)
         run: |
+          set -o pipefail
           echo "--- toolchain ---"
           if [ -d /opt/clang/bin ]; then
             /opt/clang/bin/clang --version | head -1
@@ -130,16 +131,24 @@ jobs:
           # kernel's generated SELinux headers (flask.h etc.), which
           # modules_prepare does NOT produce. flask.h is an independent rule
           # (genheaders), so it must be requested as an explicit target.
+          # NOTE: pipefail is on, so failures below are real.
           make ARCH=arm64 LLVM=1 security/selinux/ 2>&1 | tail -8 || echo 'SELINUX_DIR_WARN'
           make ARCH=arm64 LLVM=1 security/selinux/flask.h security/selinux/av_permissions.h 2>&1 | tail -12 || echo 'SELINUX_FLASK_GEN_FAILED'
           echo "--- flask.h check ---"
           ls -l security/selinux/flask.h security/selinux/include/flask.h 2>/dev/null || true
           find . -maxdepth 5 -name 'flask.h' | head -3
+          if ls security/selinux/flask.h security/selinux/include/flask.h >/dev/null 2>&1; then
+            echo "FLASK_H_OK"
+          else
+            echo 'FLASK_H_MISSING: flask.h could not be generated (see SELINUX_FLASK_GEN_FAILED / errors above)'
+            exit 1
+          fi
           echo "MODULES_PREPARE_OK"
 
       - name: Build KernelSU-Next module
         if: inputs.next_repo != ''
         run: |
+          set -o pipefail
           git clone --depth 1 --branch "${{ inputs.next_ref }}" "${{ inputs.next_repo }}" next 2>/dev/null || \
           git clone --depth 1 "${{ inputs.next_repo }}" next
           git -C next log -1 --format='NEXT HEAD: %H %s'
@@ -171,6 +180,7 @@ jobs:
       - name: Build BakaSU module
         if: inputs.bakasu_repo != ''
         run: |
+          set -o pipefail
           git clone --depth 1 --branch "${{ inputs.bakasu_ref }}" "${{ inputs.bakasu_repo }}" bakasu 2>/dev/null || \
           git clone --depth 1 "${{ inputs.bakasu_repo }}" bakasu
           git -C bakasu log -1 --format='BAKASU HEAD: %H %s'
@@ -198,6 +208,7 @@ jobs:
       - name: Build SukiSU module
         if: inputs.sukisu_repo != ''
         run: |
+          set -o pipefail
           git clone --depth 1 --branch "${{ inputs.sukisu_ref }}" "${{ inputs.sukisu_repo }}" sukisu 2>/dev/null || \
           git clone --depth 1 "${{ inputs.sukisu_repo }}" sukisu
           git -C sukisu log -1 --format='SUKISU HEAD: %H %s'
