@@ -7,7 +7,7 @@ on:
         description: 'Kernel source git clone URL (6.6-android15, layout-compatible)'
         required: true
         type: string
-        default: 'https://github.com/OnePlusOSS/android_kernel_common_oneplus_sm8750/'
+        default: 'https://github.com/OnePlusOSS/android_kernel_common_oneplus_sm8750'
       kernel_ref:
         description: 'Kernel branch / tag / commit (e.g. android15-6.6)'
         required: true
@@ -125,6 +125,11 @@ jobs:
           echo "--- config sanity ---"
           grep -E 'CONFIG_MODULES=|CONFIG_MODVERSIONS|CONFIG_KPROBES=|CONFIG_MODULE_UNLOAD' .config || true
           make ARCH=arm64 LLVM=1 modules_prepare 2>&1 | tail -25 || { echo 'MODULES_PREPARE_FAILED (see tail above)'; exit 1; }
+          # KSU-Next / fork modules include selinux objects that need the
+          # kernel's generated SELinux headers (flask.h etc.), which
+          # modules_prepare does NOT produce. Build them like the upstream
+          # DDK workflow does.
+          make ARCH=arm64 LLVM=1 security/selinux/built-in.a 2>&1 | tail -8 || echo 'SELINUX_HEADERS_SKIP (module build may fail on selinux objs)'
           echo "MODULES_PREPARE_OK"
 
       - name: Build KernelSU-Next module
@@ -133,10 +138,13 @@ jobs:
           git clone --depth 1 --branch "${{ inputs.next_ref }}" "${{ inputs.next_repo }}" next 2>/dev/null || \
           git clone --depth 1 "${{ inputs.next_repo }}" next
           git -C next log -1 --format='NEXT HEAD: %H %s'
-          ls next/kernel/Makefile || { echo 'ERROR: next/kernel/Makefile not found'; find next -maxdepth 2 -name Makefile | head; exit 1; }
-          make ARCH=arm64 LLVM=1 KBUILD_MODPOST_WARN=1 -C "$PWD/kernel" \
-            M="$PWD/next/kernel" modules 2>&1 | tail -12 || { echo 'NEXT_BUILD_FAILED (see tail above)'; exit 1; }
-          cp next/kernel/kernelsu.ko ksu-base-next.ko
+          ls next/kernel/Kbuild || { echo 'ERROR: next/kernel/Kbuild not found'; find next -maxdepth 2 -name Kbuild -o -name Makefile | head; exit 1; }
+          MDIR="$PWD/next/kernel"
+          KDIR="$PWD/kernel"
+          make -C "$KDIR" ARCH=arm64 LLVM=1 M="$MDIR" src="$MDIR" modules \
+            CONFIG_KSU=m KBUILD_MODPOST_WARN=1 2>&1 | tail -20 || { echo 'NEXT_BUILD_FAILED (see tail above)'; exit 1; }
+          ls -l "$MDIR/kernelsu.ko" 2>/dev/null || { echo 'NO kernelsu.ko produced'; find "$MDIR" -maxdepth 1 -name '*.ko' -o -name '*.o' | head; exit 1; }
+          cp "$MDIR/kernelsu.ko" ksu-base-next.ko
           echo "built next -> ksu-base-next.ko"
 
       - name: Build BakaSU module
@@ -146,10 +154,13 @@ jobs:
           git clone --depth 1 "${{ inputs.bakasu_repo }}" bakasu
           git -C bakasu log -1 --format='BAKASU HEAD: %H %s'
           M_DIR=$(find bakasu -maxdepth 2 -type d -name kernel | head -1)
-          [ -n "$M_DIR" ] || { echo 'ERROR: bakasu kernel dir not found'; find bakasu -maxdepth 2 -name Makefile | head; exit 1; }
-          make ARCH=arm64 LLVM=1 KBUILD_MODPOST_WARN=1 -C "$PWD/kernel" \
-            M="$PWD/$M_DIR" modules 2>&1 | tail -12 || { echo 'BAKASU_BUILD_FAILED (see tail above)'; exit 1; }
-          cp "$M_DIR"/kernelsu.ko ksu-base-bakasu.ko
+          [ -n "$M_DIR" ] || { echo 'ERROR: bakasu kernel dir not found'; find bakasu -maxdepth 2 -name Kbuild -o -name Makefile | head; exit 1; }
+          MDIR="$PWD/$M_DIR"
+          KDIR="$PWD/kernel"
+          make -C "$KDIR" ARCH=arm64 LLVM=1 M="$MDIR" src="$MDIR" modules \
+            CONFIG_KSU=m KBUILD_MODPOST_WARN=1 2>&1 | tail -20 || { echo 'BAKASU_BUILD_FAILED (see tail above)'; exit 1; }
+          ls -l "$MDIR/kernelsu.ko" 2>/dev/null || { echo 'NO kernelsu.ko produced'; find "$MDIR" -maxdepth 1 -name '*.ko' -o -name '*.o' | head; exit 1; }
+          cp "$MDIR/kernelsu.ko" ksu-base-bakasu.ko
           echo "built bakasu -> ksu-base-bakasu.ko"
 
       - name: Build SukiSU module
@@ -159,10 +170,13 @@ jobs:
           git clone --depth 1 "${{ inputs.sukisu_repo }}" sukisu
           git -C sukisu log -1 --format='SUKISU HEAD: %H %s'
           M_DIR=$(find sukisu -maxdepth 2 -type d -name kernel | head -1)
-          [ -n "$M_DIR" ] || { echo 'ERROR: sukisu kernel dir not found'; find sukisu -maxdepth 2 -name Makefile | head; exit 1; }
-          make ARCH=arm64 LLVM=1 KBUILD_MODPOST_WARN=1 -C "$PWD/kernel" \
-            M="$PWD/$M_DIR" modules 2>&1 | tail -12 || { echo 'SUKISU_BUILD_FAILED (see tail above)'; exit 1; }
-          cp "$M_DIR"/kernelsu.ko ksu-base-sukisu.ko
+          [ -n "$M_DIR" ] || { echo 'ERROR: sukisu kernel dir not found'; find sukisu -maxdepth 2 -name Kbuild -o -name Makefile | head; exit 1; }
+          MDIR="$PWD/$M_DIR"
+          KDIR="$PWD/kernel"
+          make -C "$KDIR" ARCH=arm64 LLVM=1 M="$MDIR" src="$MDIR" modules \
+            CONFIG_KSU=m KBUILD_MODPOST_WARN=1 2>&1 | tail -20 || { echo 'SUKISU_BUILD_FAILED (see tail above)'; exit 1; }
+          ls -l "$MDIR/kernelsu.ko" 2>/dev/null || { echo 'NO kernelsu.ko produced'; find "$MDIR" -maxdepth 1 -name '*.ko' -o -name '*.o' | head; exit 1; }
+          cp "$MDIR/kernelsu.ko" ksu-base-sukisu.ko
           echo "built sukisu -> ksu-base-sukisu.ko"
 
       - name: Inspect built modules
