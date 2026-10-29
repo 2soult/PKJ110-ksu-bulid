@@ -7,7 +7,7 @@ on:
         description: 'Kernel source git clone URL (6.6-android15, layout-compatible)'
         required: true
         type: string
-        default: 'https://github.com/OnePlusOSS/android_kernel_common_oneplus_sm8750'
+        default: 'https://github.com/OnePlusOSS/kernel_oplus'
       kernel_ref:
         description: 'Kernel branch / tag / commit (e.g. android15-6.6)'
         required: true
@@ -29,30 +29,30 @@ on:
         type: string
         default: 'https://github.com/rifsxd/KernelSU-Next.git'
       next_ref:
-        description: 'KernelSU-Next branch'
+        description: 'KernelSU-Next branch (empty = repo default)'
         required: false
         type: string
-        default: 'main'
+        default: ''
       bakasu_repo:
         description: 'BakaSU source repo (empty = skip)'
         required: false
         type: string
         default: 'https://github.com/backslashxx/bakasu.git'
       bakasu_ref:
-        description: 'BakaSU branch'
+        description: 'BakaSU branch (empty = repo default)'
         required: false
         type: string
-        default: 'main'
+        default: ''
       sukisu_repo:
         description: 'SukiSU source repo (empty = skip)'
         required: false
         type: string
         default: 'https://github.com/sukisu/KernelSU.git'
       sukisu_ref:
-        description: 'SukiSU branch'
+        description: 'SukiSU branch (empty = repo default)'
         required: false
         type: string
-        default: 'main'
+        default: ''
 
 jobs:
   build:
@@ -130,33 +130,38 @@ jobs:
       - name: Build KernelSU-Next module
         if: inputs.next_repo != ''
         run: |
-          git clone --depth 1 --branch "${{ inputs.next_ref }}" "${{ inputs.next_repo }}" next
-          ls next/kernel/Makefile || { echo 'ERROR: next/kernel/Makefile not found'; exit 1; }
+          git clone --depth 1 --branch "${{ inputs.next_ref }}" "${{ inputs.next_repo }}" next 2>/dev/null || \
+          git clone --depth 1 "${{ inputs.next_repo }}" next
+          git -C next log -1 --format='NEXT HEAD: %H %s'
+          ls next/kernel/Makefile || { echo 'ERROR: next/kernel/Makefile not found'; find next -maxdepth 2 -name Makefile | head; exit 1; }
           make ARCH=arm64 LLVM=1 KBUILD_MODPOST_WARN=1 -C "$PWD/kernel" \
-            M="$PWD/next/kernel" modules 2>&1 | tail -8
+            M="$PWD/next/kernel" modules 2>&1 | tail -12 || { echo 'NEXT_BUILD_FAILED (see tail above)'; exit 1; }
           cp next/kernel/kernelsu.ko ksu-base-next.ko
           echo "built next -> ksu-base-next.ko"
 
       - name: Build BakaSU module
         if: inputs.bakasu_repo != ''
         run: |
-          git clone --depth 1 --branch "${{ inputs.bakasu_ref }}" "${{ inputs.bakasu_repo }}" bakasu
-          find bakasu -maxdepth 2 -name Makefile -path '*kernel*' | head -3
+          git clone --depth 1 --branch "${{ inputs.bakasu_ref }}" "${{ inputs.bakasu_repo }}" bakasu 2>/dev/null || \
+          git clone --depth 1 "${{ inputs.bakasu_repo }}" bakasu
+          git -C bakasu log -1 --format='BAKASU HEAD: %H %s'
           M_DIR=$(find bakasu -maxdepth 2 -type d -name kernel | head -1)
-          [ -n "$M_DIR" ] || { echo 'ERROR: bakasu kernel dir not found'; exit 1; }
+          [ -n "$M_DIR" ] || { echo 'ERROR: bakasu kernel dir not found'; find bakasu -maxdepth 2 -name Makefile | head; exit 1; }
           make ARCH=arm64 LLVM=1 KBUILD_MODPOST_WARN=1 -C "$PWD/kernel" \
-            M="$PWD/$M_DIR" modules 2>&1 | tail -8
+            M="$PWD/$M_DIR" modules 2>&1 | tail -12 || { echo 'BAKASU_BUILD_FAILED (see tail above)'; exit 1; }
           cp "$M_DIR"/kernelsu.ko ksu-base-bakasu.ko
           echo "built bakasu -> ksu-base-bakasu.ko"
 
       - name: Build SukiSU module
         if: inputs.sukisu_repo != ''
         run: |
-          git clone --depth 1 --branch "${{ inputs.sukisu_ref }}" "${{ inputs.sukisu_repo }}" sukisu
+          git clone --depth 1 --branch "${{ inputs.sukisu_ref }}" "${{ inputs.sukisu_repo }}" sukisu 2>/dev/null || \
+          git clone --depth 1 "${{ inputs.sukisu_repo }}" sukisu
+          git -C sukisu log -1 --format='SUKISU HEAD: %H %s'
           M_DIR=$(find sukisu -maxdepth 2 -type d -name kernel | head -1)
-          [ -n "$M_DIR" ] || { echo 'ERROR: sukisu kernel dir not found'; exit 1; }
+          [ -n "$M_DIR" ] || { echo 'ERROR: sukisu kernel dir not found'; find sukisu -maxdepth 2 -name Makefile | head; exit 1; }
           make ARCH=arm64 LLVM=1 KBUILD_MODPOST_WARN=1 -C "$PWD/kernel" \
-            M="$PWD/$M_DIR" modules 2>&1 | tail -8
+            M="$PWD/$M_DIR" modules 2>&1 | tail -12 || { echo 'SUKISU_BUILD_FAILED (see tail above)'; exit 1; }
           cp "$M_DIR"/kernelsu.ko ksu-base-sukisu.ko
           echo "built sukisu -> ksu-base-sukisu.ko"
 
