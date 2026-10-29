@@ -213,7 +213,8 @@ jobs:
           MDIR="$PWD/$M_DIR"
           KDIR="$PWD/kernel"
           make -C "$KDIR" ARCH=arm64 LLVM=1 M="$MDIR" src="$MDIR" modules \
-            CONFIG_KSU=m KBUILD_MODPOST_WARN=1 2>&1 | tee bakasu-build.log | tail -25 || { echo 'BAKASU_BUILD_FAILED (errors below)'; grep -n 'error:' bakasu-build.log | head -30; exit 1; }
+            CONFIG_KSU=m CONFIG_KSU_MULTI_MANAGER_SUPPORT=y CONFIG_KSU_TRACEPOINT_HOOK=y \
+            KBUILD_MODPOST_WARN=1 2>&1 | tee bakasu-build.log | tail -25 || { echo 'BAKASU_BUILD_FAILED (errors below)'; grep -n 'error:' bakasu-build.log | head -30; exit 1; }
           ls -l "$MDIR/kernelsu.ko" 2>/dev/null || { echo 'NO kernelsu.ko produced'; find "$MDIR" -maxdepth 1 -name '*.ko' -o -name '*.o' | head; exit 1; }
           cp "$MDIR/kernelsu.ko" ksu-base-bakasu.ko
           echo "built bakasu -> ksu-base-bakasu.ko"
@@ -241,7 +242,8 @@ jobs:
           MDIR="$PWD/$M_DIR"
           KDIR="$PWD/kernel"
           make -C "$KDIR" ARCH=arm64 LLVM=1 M="$MDIR" src="$MDIR" modules \
-            CONFIG_KSU=m KBUILD_MODPOST_WARN=1 2>&1 | tee sukisu-build.log | tail -25 || { echo 'SUKISU_BUILD_FAILED (errors below)'; grep -n 'error:' sukisu-build.log | head -30; exit 1; }
+            CONFIG_KSU=m CONFIG_KSU_MULTI_MANAGER_SUPPORT=y CONFIG_KSU_TRACEPOINT_HOOK=y \
+            KBUILD_MODPOST_WARN=1 2>&1 | tee sukisu-build.log | tail -25 || { echo 'SUKISU_BUILD_FAILED (errors below)'; grep -n 'error:' sukisu-build.log | head -30; exit 1; }
           ls -l "$MDIR/kernelsu.ko" 2>/dev/null || { echo 'NO kernelsu.ko produced'; find "$MDIR" -maxdepth 1 -name '*.ko' -o -name '*.o' | head; exit 1; }
           cp "$MDIR/kernelsu.ko" ksu-base-sukisu.ko
           echo "built sukisu -> ksu-base-sukisu.ko"
