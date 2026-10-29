@@ -101,11 +101,18 @@ jobs:
           grep -E '^(VERSION|PATCHLEVEL|SUBLEVEL|EXTRAVERSION)' Makefile | tr -d '\n'; echo
           CFG="${{ inputs.defconfig }}"
           if [ -z "$CFG" ]; then
-            for d in arch/arm64/configs/vendor arch/arm64/configs; do
-              [ -d "$d" ] || continue
-              CFG=$(find "$d" -maxdepth 2 -name '*defconfig' 2>/dev/null | sort | head -1 | xargs -n1 basename 2>/dev/null)
-              [ -n "$CFG" ] && break
-            done
+            # Prefer the GKI base config: vendor trees keep minimal/debug
+            # defconfigs (e.g. crashdump_defconfig) that disable AUDIT and
+            # SECURITY_SELINUX, which breaks flask.h generation.
+            if [ -f arch/arm64/configs/gki_defconfig ]; then
+              CFG=gki_defconfig
+            else
+              for d in arch/arm64/configs/vendor arch/arm64/configs; do
+                [ -d "$d" ] || continue
+                CFG=$(find "$d" -maxdepth 2 -name '*defconfig' ! -name 'crashdump*' 2>/dev/null | sort | head -1 | xargs -n1 basename 2>/dev/null)
+                [ -n "$CFG" ] && break
+              done
+            fi
           fi
           if [ -z "$CFG" ]; then
             echo 'ERROR: no defconfig found (set the defconfig input manually)'
