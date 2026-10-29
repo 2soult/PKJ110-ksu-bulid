@@ -7,7 +7,7 @@ on:
         description: 'Kernel source git clone URL (6.6-android15, layout-compatible)'
         required: true
         type: string
-        default: 'https://github.com/OnePlusOSS/android_kernel_common_oneplus_sm8750'
+        default: 'https://github.com/OnePlusOSS/android_kernel_common_oneplus_sm8750/'
       kernel_ref:
         description: 'Kernel branch / tag / commit (e.g. android15-6.6)'
         required: true
@@ -139,6 +139,18 @@ jobs:
           git clone --depth 1 "${{ inputs.next_repo }}" next
           git -C next log -1 --format='NEXT HEAD: %H %s'
           ls next/kernel/Kbuild || { echo 'ERROR: next/kernel/Kbuild not found'; find next -maxdepth 2 -name Kbuild -o -name Makefile | head; exit 1; }
+          patch_fork() {
+            F="$PWD/$1/kernel/hook/setuid_hook.c"
+            [ -f "$F" ] || { echo "no setuid_hook.c for $1"; return 0; }
+            # Vendor kernels (e.g. OPPO) customize struct seccomp and drop the
+            # mode/filter members GKI code expects. The allow-cache is only an
+            # optimization, so drop those calls to stay compatible.
+            sed -i '/ksu_seccomp_allow_cache(current->seccomp.filter, __NR_reboot);/d' "$F"
+            perl -0pi -e 's/\s*if \(current->seccomp\.mode == SECCOMP_MODE_FILTER &&\s*\n\s*current->seccomp\.filter\) \{\n(.*?)\n\s*\}//s' "$F"
+            sed -i '0,/#include <linux\/compiler.h>/s//#include <linux\/compiler.h>\n#include <asm\/unistd.h>/' "$F"
+            echo "patched $1 setuid_hook.c"
+          }
+          patch_fork next
           MDIR="$PWD/next/kernel"
           KDIR="$PWD/kernel"
           make -C "$KDIR" ARCH=arm64 LLVM=1 M="$MDIR" src="$MDIR" modules \
@@ -155,6 +167,15 @@ jobs:
           git -C bakasu log -1 --format='BAKASU HEAD: %H %s'
           M_DIR=$(find bakasu -maxdepth 2 -type d -name kernel | head -1)
           [ -n "$M_DIR" ] || { echo 'ERROR: bakasu kernel dir not found'; find bakasu -maxdepth 2 -name Kbuild -o -name Makefile | head; exit 1; }
+          patch_fork() {
+            F="$PWD/$1/kernel/hook/setuid_hook.c"
+            [ -f "$F" ] || { echo "no setuid_hook.c for $1"; return 0; }
+            sed -i '/ksu_seccomp_allow_cache(current->seccomp.filter, __NR_reboot);/d' "$F"
+            perl -0pi -e 's/\s*if \(current->seccomp\.mode == SECCOMP_MODE_FILTER &&\s*\n\s*current->seccomp\.filter\) \{\n(.*?)\n\s*\}//s' "$F"
+            sed -i '0,/#include <linux\/compiler.h>/s//#include <linux\/compiler.h>\n#include <asm\/unistd.h>/' "$F"
+            echo "patched $1 setuid_hook.c"
+          }
+          patch_fork bakasu
           MDIR="$PWD/$M_DIR"
           KDIR="$PWD/kernel"
           make -C "$KDIR" ARCH=arm64 LLVM=1 M="$MDIR" src="$MDIR" modules \
@@ -171,6 +192,15 @@ jobs:
           git -C sukisu log -1 --format='SUKISU HEAD: %H %s'
           M_DIR=$(find sukisu -maxdepth 2 -type d -name kernel | head -1)
           [ -n "$M_DIR" ] || { echo 'ERROR: sukisu kernel dir not found'; find sukisu -maxdepth 2 -name Kbuild -o -name Makefile | head; exit 1; }
+          patch_fork() {
+            F="$PWD/$1/kernel/hook/setuid_hook.c"
+            [ -f "$F" ] || { echo "no setuid_hook.c for $1"; return 0; }
+            sed -i '/ksu_seccomp_allow_cache(current->seccomp.filter, __NR_reboot);/d' "$F"
+            perl -0pi -e 's/\s*if \(current->seccomp\.mode == SECCOMP_MODE_FILTER &&\s*\n\s*current->seccomp\.filter\) \{\n(.*?)\n\s*\}//s' "$F"
+            sed -i '0,/#include <linux\/compiler.h>/s//#include <linux\/compiler.h>\n#include <asm\/unistd.h>/' "$F"
+            echo "patched $1 setuid_hook.c"
+          }
+          patch_fork sukisu
           MDIR="$PWD/$M_DIR"
           KDIR="$PWD/kernel"
           make -C "$KDIR" ARCH=arm64 LLVM=1 M="$MDIR" src="$MDIR" modules \
