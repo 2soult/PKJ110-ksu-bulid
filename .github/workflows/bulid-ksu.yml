@@ -150,10 +150,10 @@ jobs:
           echo "--- flask.h check ---"
           ls -l security/selinux/flask.h security/selinux/include/flask.h 2>/dev/null || true
           find . -maxdepth 5 -name 'flask.h' | head -3
-          if ls security/selinux/flask.h security/selinux/include/flask.h >/dev/null 2>&1; then
+          if [ -f security/selinux/flask.h ] || [ -f security/selinux/include/flask.h ]; then
             echo "FLASK_H_OK"
           else
-            echo 'FLASK_H_MISSING: flask.h could not be generated (see SELINUX_FLASK_GEN_FAILED / errors above)'
+            echo 'FLASK_H_MISSING: flask.h could not be generated (see errors above)'
             exit 1
           fi
           echo "MODULES_PREPARE_OK"
