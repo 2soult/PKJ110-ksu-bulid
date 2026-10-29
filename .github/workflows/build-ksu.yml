@@ -121,15 +121,18 @@ jobs:
           scripts/config --enable CONFIG_KALLSYMS
           scripts/config --enable CONFIG_KPROBES
           scripts/config --enable CONFIG_MODULE_UNLOAD
+          scripts/config --enable CONFIG_SECURITY_SELINUX
           make ARCH=arm64 LLVM=1 olddefconfig || { echo 'OLDEFCONFIG_FAILED'; exit 1; }
           echo "--- config sanity ---"
-          grep -E 'CONFIG_MODULES=|CONFIG_MODVERSIONS|CONFIG_KPROBES=|CONFIG_MODULE_UNLOAD' .config || true
+          grep -E 'CONFIG_MODULES=|CONFIG_MODVERSIONS|CONFIG_KPROBES=|CONFIG_MODULE_UNLOAD|CONFIG_SECURITY_SELINUX=' .config || true
           make ARCH=arm64 LLVM=1 modules_prepare 2>&1 | tail -25 || { echo 'MODULES_PREPARE_FAILED (see tail above)'; exit 1; }
           # KSU-Next / fork modules include selinux objects that need the
           # kernel's generated SELinux headers (flask.h etc.), which
-          # modules_prepare does NOT produce. Build them like the upstream
-          # DDK workflow does.
-          make ARCH=arm64 LLVM=1 security/selinux/built-in.a 2>&1 | tail -8 || echo 'SELINUX_HEADERS_SKIP (module build may fail on selinux objs)'
+          # modules_prepare does NOT produce. Build the selinux dir so the
+          # genheaders rule emits flask.h / av_permissions.h.
+          make ARCH=arm64 LLVM=1 security/selinux/ 2>&1 | tail -12 || echo 'SELINUX_GEN_WARN (flask.h may be missing)'
+          echo "--- flask.h check ---"
+          ls -l security/selinux/flask.h security/selinux/include/flask.h 2>/dev/null || find . -maxdepth 4 -name 'flask.h' | head -3
           echo "MODULES_PREPARE_OK"
 
       - name: Build KernelSU-Next module
