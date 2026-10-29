@@ -122,18 +122,24 @@ jobs:
           scripts/config --enable CONFIG_KALLSYMS
           scripts/config --enable CONFIG_KPROBES
           scripts/config --enable CONFIG_MODULE_UNLOAD
+          # SECURITY_SELINUX depends on SECURITY_NETWORK && AUDIT && NET && INET
+          # (default n) and gates the selinux dir build, which is what
+          # generates flask.h. Enable the whole dependency chain explicitly.
+          scripts/config --enable CONFIG_SECURITY
+          scripts/config --enable CONFIG_SECURITY_NETWORK
+          scripts/config --enable CONFIG_AUDIT
           scripts/config --enable CONFIG_SECURITY_SELINUX
           make ARCH=arm64 LLVM=1 olddefconfig || { echo 'OLDEFCONFIG_FAILED'; exit 1; }
           echo "--- config sanity ---"
-          grep -E 'CONFIG_MODULES=|CONFIG_MODVERSIONS|CONFIG_KPROBES=|CONFIG_MODULE_UNLOAD|CONFIG_SECURITY_SELINUX=' .config || true
+          grep -E 'CONFIG_MODULES=|CONFIG_MODVERSIONS|CONFIG_KPROBES=|CONFIG_MODULE_UNLOAD|CONFIG_SECURITY=|CONFIG_SECURITY_NETWORK=|CONFIG_AUDIT=|CONFIG_SECURITY_SELINUX=' .config || true
+          grep -q '^CONFIG_SECURITY_SELINUX=y' .config || { echo 'SELINUX_CFG_FAILED: CONFIG_SECURITY_SELINUX could not be enabled (check USING_CFG above and config sanity)'; exit 1; }
           make ARCH=arm64 LLVM=1 modules_prepare 2>&1 | tail -25 || { echo 'MODULES_PREPARE_FAILED (see tail above)'; exit 1; }
           # KSU-Next / fork modules include selinux objects that need the
-          # kernel's generated SELinux headers (flask.h etc.), which
-          # modules_prepare does NOT produce. flask.h is an independent rule
-          # (genheaders), so it must be requested as an explicit target.
-          # NOTE: pipefail is on, so failures below are real.
-          make ARCH=arm64 LLVM=1 security/selinux/ 2>&1 | tail -8 || echo 'SELINUX_DIR_WARN'
-          make ARCH=arm64 LLVM=1 security/selinux/flask.h security/selinux/av_permissions.h 2>&1 | tail -12 || echo 'SELINUX_FLASK_GEN_FAILED'
+          # kernel's generated SELinux headers (flask.h etc.). With
+          # CONFIG_SECURITY_SELINUX=y the selinux-y objects depend on flask.h,
+          # so building the selinux dir emits it via genheaders.
+          make ARCH=arm64 LLVM=1 security/selinux/ 2>&1 | tail -12 || echo 'SELINUX_DIR_BUILD_WARN'
+          make ARCH=arm64 LLVM=1 security/selinux/flask.h 2>&1 | tail -6 || echo 'FLASK_EXPLICIT_TARGET_SKIP (dir target should have built it)'
           echo "--- flask.h check ---"
           ls -l security/selinux/flask.h security/selinux/include/flask.h 2>/dev/null || true
           find . -maxdepth 5 -name 'flask.h' | head -3
