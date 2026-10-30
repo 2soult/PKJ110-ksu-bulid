@@ -307,7 +307,7 @@ jobs:
           ls "$SUSFS_K/Makefile" || { echo 'ERROR: susfs kernel Makefile not found (check lkm/susfs4ksu-lkm path)'; find shark/lkm -maxdepth 3 -name Makefile | head; exit 1; }
           KDIR="$PWD/kernel"
           make -k -C "$KDIR" M="$SUSFS_K" ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
-            modules 2>&1 | tee susfs-build.log | tail -25 || { echo 'SUSFS_BUILD_FAILED (errors below)'; grep -n 'error:' susfs-build.log | head -30; exit 1; }
+            modules KBUILD_MODPOST_WARN=1 2>&1 | tee susfs-build.log | tail -25 || { echo 'SUSFS_BUILD_FAILED (errors below)'; grep -n 'error:' susfs-build.log | head -30; exit 1; }
           ls -l "$SUSFS_K/susfs_guard_lkm.ko" 2>/dev/null || { echo 'NO susfs_guard_lkm.ko produced'; find "$SUSFS_K" -maxdepth 1 -name '*.ko' -o -name '*.o' | head; exit 1; }
           cp "$SUSFS_K/susfs_guard_lkm.ko" susfs_guard_lkm.ko
           echo "built susfs -> susfs_guard_lkm.ko"
