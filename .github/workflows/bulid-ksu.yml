@@ -73,6 +73,11 @@ on:
         required: false
         type: string
         default: ''
+      ksud_for:
+        description: 'Space-separated forks to build matching ksud (inner-module 6.6.118): finasu next bakasu sukisu'
+        required: false
+        type: string
+        default: 'finasu next'
 
 jobs:
   build:
@@ -335,4 +340,75 @@ jobs:
             ksu-base-*.ko
             susfs_guard_lkm.ko
             build-report.txt
+          retention-days: 30
+
+  build-ksud:
+    needs: build
+    runs-on: ubuntu-22.04
+    if: inputs.ksud_for != ''
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r29
+
+      - name: Rust setup
+        run: |
+          rustup update stable
+          rustup target add aarch64-linux-android
+          sudo apt-get update
+          sudo apt-get install -y libclang-dev clang || true
+
+      - name: Download modules
+        uses: actions/download-artifact@v4
+        with:
+          name: ksu-fork-modules
+          path: modules
+
+      - name: Build matching ksud (inner 6.6.118 module)
+        run: |
+          set -o pipefail
+          ANDROID_NDK_HOME="${{ steps.setup-ndk.outputs.ndk-path }}"
+          LLVM_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          export CLANG_PATH="$LLVM_BIN/aarch64-linux-android26-clang"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CLANG_PATH"
+          export AR_aarch64_linux_android="$LLVM_BIN/llvm-ar"
+          BUILTINS="$($CLANG_PATH --print-resource-dir)/lib/linux/libclang_rt.builtins-aarch64-android.a"
+          export RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wno-unused-command-line-argument -C link-arg=$BUILTINS"
+          export BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--sysroot=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot -I$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android -I$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include"
+          for fork in ${{ inputs.ksud_for }}; do
+            case "$fork" in
+              finasu) repo="${{ inputs.finasu_repo }}"; br="${{ inputs.finasu_ref }}";;
+              next)   repo="${{ inputs.next_repo }}";   br="${{ inputs.next_ref }}";;
+              bakasu) repo="${{ inputs.bakasu_repo }}"; br="${{ inputs.bakasu_ref }}";;
+              sukisu) repo="${{ inputs.sukisu_repo }}"; br="${{ inputs.sukisu_ref }}";;
+              *) echo "unknown fork $fork"; continue;;
+            esac
+            [ -n "$repo" ] || { echo "SKIP $fork: empty repo"; continue; }
+            [ -f "modules/ksu-base-$fork.ko" ] || { echo "SKIP $fork: module not found"; continue; }
+            git clone --depth 1 --branch "$br" "$repo" "$fork" 2>/dev/null || \
+            git clone --depth 1 "$repo" "$fork"
+            [ -d "$fork/userspace/ksud" ] || { echo "SKIP $fork: no userspace/ksud"; continue; }
+            git -C "$fork" log -1 --format="$fork HEAD: %H %s"
+            # inner module: named by KMI so `late-load --kmi android15-6.6` finds it
+            cp "modules/ksu-base-$fork.ko" "$fork/userspace/ksud/bin/aarch64/android15-6.6_kernelsu.ko"
+            # ksuinit companion (optional)
+            if [ -d "$fork/userspace/ksuinit" ]; then
+              ( cd "$fork/userspace/ksuinit" && cargo build --target=aarch64-linux-android --release 2>&1 | tail -3 ) || { echo "KSUINIT_BUILD_FAILED $fork"; exit 1; }
+              cp "$fork/userspace/ksuinit/target/aarch64-linux-android/release/ksuinit" "$fork/userspace/ksud/bin/aarch64/ksuinit"
+              echo "ksuinit built for $fork"
+            fi
+            ( cd "$fork/userspace/ksud" && cargo build --target=aarch64-linux-android --release 2>&1 | tail -5 ) || { echo 'KSUD_BUILD_FAILED'; exit 1; }
+            cp "$fork/userspace/ksud/target/aarch64-linux-android/release/ksud" "ksud_$fork"
+            echo "built ksud_$fork ($(stat -c %s ksud_$fork) B)"
+          done
+          ls -l ksud_*
+
+      - name: Upload ksud artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ksud-matched
+          path: ksud_*
           retention-days: 30
