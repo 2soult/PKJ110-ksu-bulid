@@ -3,7 +3,7 @@ name: Build ksud only (inner 6.6.118 module)
 on:
   workflow_dispatch:
     inputs:
-      artifact_run_id: '41227897641'
+      artifact_run_id:
         description: 'Run ID that built ksu-fork-modules (empty = latest successful build-ksu run)'
         required: false
         type: string
