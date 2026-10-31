@@ -394,11 +394,14 @@ jobs:
             git -C "$fork" log -1 --format="$fork HEAD: %H %s"
             # inner module: named by KMI so `late-load --kmi android15-6.6` finds it
             cp "modules/ksu-base-$fork.ko" "$fork/userspace/ksud/bin/aarch64/android15-6.6_kernelsu.ko"
-            # ksuinit companion (optional)
+            # ksuinit companion (optional; binary name varies per fork)
             if [ -d "$fork/userspace/ksuinit" ]; then
               ( cd "$fork/userspace/ksuinit" && cargo build --target=aarch64-linux-android --release 2>&1 | tail -3 ) || { echo "KSUINIT_BUILD_FAILED $fork"; exit 1; }
-              cp "$fork/userspace/ksuinit/target/aarch64-linux-android/release/ksuinit" "$fork/userspace/ksud/bin/aarch64/ksuinit"
-              echo "ksuinit built for $fork"
+              KS=$(find "$fork/userspace/ksuinit/target" -maxdepth 3 -type f -name 'ksuinit*' 2>/dev/null | head -1)
+              [ -n "$KS" ] || KS=$(find "$fork/userspace/ksuinit/target" -maxdepth 4 -type f -perm -111 2>/dev/null | grep -v '\.d$' | head -1)
+              [ -n "$KS" ] || { echo "KSUINIT_BINARY_NOT_FOUND $fork"; exit 1; }
+              cp "$KS" "$fork/userspace/ksud/bin/aarch64/ksuinit"
+              echo "ksuinit built for $fork ($(basename "$KS"))"
             fi
             ( cd "$fork/userspace/ksud" && cargo build --target=aarch64-linux-android --release 2>&1 | tail -5 ) || { echo 'KSUD_BUILD_FAILED'; exit 1; }
             cp "$fork/userspace/ksud/target/aarch64-linux-android/release/ksud" "ksud_$fork"
