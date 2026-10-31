@@ -117,6 +117,12 @@ jobs:
           SYS_LIB="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/26"
           export RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wno-unused-command-line-argument -C link-arg=$BUILTINS -C link-arg=-L$SYS_LIB"
           export BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--sysroot=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot -I$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android -I$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include"
+          echo "--- liblog locate ---"
+          find "$ANDROID_NDK_HOME" -name 'liblog.so' 2>/dev/null | head -5 || true
+          echo 'int main(){return 0;}' > /tmp/t.c
+          SYS_LIB="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/26"
+          if "$CLANG_PATH" /tmp/t.c -llog -o /tmp/t.out -L"$SYS_LIB" 2>/dev/null; then echo "LINK_LOG_OK with -L$SYS_LIB"; else echo "LINK_LOG_FAIL with -L$SYS_LIB"; fi
+          find "$ANDROID_NDK_HOME" -maxdepth 6 -type d -name 'aarch64-linux-android' 2>/dev/null | head -3 || true
           for fork in ${{ inputs.ksud_for }}; do
             case "$fork" in
               finasu) repo="${{ inputs.finasu_repo }}"; br="${{ inputs.finasu_ref }}";;
