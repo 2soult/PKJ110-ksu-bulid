@@ -3,7 +3,7 @@ name: Build ksud only (inner 6.6.118 module)
 on:
   workflow_dispatch:
     inputs:
-      artifact_run_id:
+      artifact_run_id: '41227897641'
         description: 'Run ID that built ksu-fork-modules (empty = latest successful build-ksu run)'
         required: false
         type: string
@@ -114,7 +114,8 @@ jobs:
           export CXX_aarch64_linux_android="$CLANG_PATH++"
           export AR_aarch64_linux_android="$LLVM_BIN/llvm-ar"
           BUILTINS="$($CLANG_PATH --print-resource-dir)/lib/linux/libclang_rt.builtins-aarch64-android.a"
-          export RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wno-unused-command-line-argument -C link-arg=$BUILTINS"
+          SYS_LIB="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/26"
+          export RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wno-unused-command-line-argument -C link-arg=$BUILTINS -C link-arg=-L$SYS_LIB"
           export BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--sysroot=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot -I$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android -I$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include"
           for fork in ${{ inputs.ksud_for }}; do
             case "$fork" in
