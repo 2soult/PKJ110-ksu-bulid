@@ -394,17 +394,24 @@ jobs:
             git -C "$fork" log -1 --format="$fork HEAD: %H %s"
             # inner module: named by KMI so `late-load --kmi android15-6.6` finds it
             cp "modules/ksu-base-$fork.ko" "$fork/userspace/ksud/bin/aarch64/android15-6.6_kernelsu.ko"
-            # ksuinit companion (optional; binary name varies per fork)
+            # ksuinit companion (optional; binary name / target dir vary per fork)
             if [ -d "$fork/userspace/ksuinit" ]; then
               ( cd "$fork/userspace/ksuinit" && cargo build --target=aarch64-linux-android --release 2>&1 | tail -3 ) || { echo "KSUINIT_BUILD_FAILED $fork"; exit 1; }
-              KS=$(find "$fork/userspace/ksuinit/target" -maxdepth 3 -type f -name 'ksuinit*' 2>/dev/null | head -1)
-              [ -n "$KS" ] || KS=$(find "$fork/userspace/ksuinit/target" -maxdepth 4 -type f -perm -111 2>/dev/null | grep -v '\.d$' | head -1)
+              echo "KSUINIT_BUILD_OK $fork"
+              find "$fork" -maxdepth 5 -type f -perm -111 2>/dev/null | grep -v '\.d$' | head -10 || true
+              KS=$(find "$fork" -maxdepth 5 -type f -name 'ksuinit*' 2>/dev/null | head -1)
+              [ -n "$KS" ] || KS=$(find "$fork" -maxdepth 5 -type f -perm -111 2>/dev/null | grep -v '\.d$' | head -1)
               [ -n "$KS" ] || { echo "KSUINIT_BINARY_NOT_FOUND $fork"; exit 1; }
-              cp "$KS" "$fork/userspace/ksud/bin/aarch64/ksuinit"
-              echo "ksuinit built for $fork ($(basename "$KS"))"
+              mkdir -p "$fork/userspace/ksud/bin/aarch64"
+              cp "$KS" "$fork/userspace/ksud/bin/aarch64/ksuinit" || { echo "KSUINIT_CP_FAILED $fork src=$KS"; exit 1; }
+              echo "ksuinit staged for $fork ($(basename "$KS"))"
             fi
+            mkdir -p "$fork/userspace/ksud/bin/aarch64"
             ( cd "$fork/userspace/ksud" && cargo build --target=aarch64-linux-android --release 2>&1 | tail -5 ) || { echo 'KSUD_BUILD_FAILED'; exit 1; }
-            cp "$fork/userspace/ksud/target/aarch64-linux-android/release/ksud" "ksud_$fork"
+            KSD=$(find "$fork/userspace/ksud/target" "$fork/userspace/target" "$fork/target" -maxdepth 4 -type f -name 'ksud*' 2>/dev/null | grep -v '\.d$' | head -1)
+            [ -n "$KSD" ] || KSD=$(find "$fork" -maxdepth 5 -type f -perm -111 2>/dev/null | grep -v '\.d$' | head -1)
+            [ -n "$KSD" ] || { echo 'KSUD_BINARY_NOT_FOUND'; exit 1; }
+            cp "$KSD" "ksud_$fork" || { echo "KSUD_CP_FAILED src=$KSD"; exit 1; }
             echo "built ksud_$fork ($(stat -c %s ksud_$fork) B)"
           done
           ls -l ksud_*
