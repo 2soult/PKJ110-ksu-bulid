@@ -374,6 +374,8 @@ jobs:
           LLVM_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
           export CLANG_PATH="$LLVM_BIN/aarch64-linux-android26-clang"
           export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CLANG_PATH"
+          export CC_aarch64_linux_android="$CLANG_PATH"
+          export CXX_aarch64_linux_android="$CLANG_PATH++"
           export AR_aarch64_linux_android="$LLVM_BIN/llvm-ar"
           BUILTINS="$($CLANG_PATH --print-resource-dir)/lib/linux/libclang_rt.builtins-aarch64-android.a"
           export RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wno-unused-command-line-argument -C link-arg=$BUILTINS"
@@ -399,8 +401,8 @@ jobs:
               ( cd "$fork/userspace/ksuinit" && cargo build --target=aarch64-linux-android --release 2>&1 | tail -3 ) || { echo "KSUINIT_BUILD_FAILED $fork"; exit 1; }
               echo "KSUINIT_BUILD_OK $fork"
               find "$fork" -maxdepth 5 -type f -perm -111 2>/dev/null | grep -v '\.d$' | head -10 || true
-              KS=$(find "$fork" -maxdepth 5 -type f -name 'ksuinit*' 2>/dev/null | head -1)
-              [ -n "$KS" ] || KS=$(find "$fork" -maxdepth 5 -type f -perm -111 2>/dev/null | grep -v '\.d$' | head -1)
+              KS=$(find "$fork" -maxdepth 6 -type f -path '*/release/*' -name 'ksuinit*' -perm -111 2>/dev/null | grep -vE '\.(yml|sh|md|json|d)$' | head -1)
+              [ -n "$KS" ] || KS=$(find "$fork" -maxdepth 6 -type f -path '*/release/*' -perm -111 2>/dev/null | grep -vE '\.(yml|sh|md|json|d)$' | head -1)
               [ -n "$KS" ] || { echo "KSUINIT_BINARY_NOT_FOUND $fork"; exit 1; }
               mkdir -p "$fork/userspace/ksud/bin/aarch64"
               cp "$KS" "$fork/userspace/ksud/bin/aarch64/ksuinit" || { echo "KSUINIT_CP_FAILED $fork src=$KS"; exit 1; }
