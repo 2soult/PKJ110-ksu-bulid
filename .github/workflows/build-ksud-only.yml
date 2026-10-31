@@ -72,8 +72,13 @@ jobs:
           set -o pipefail
           RID="${{ inputs.artifact_run_id }}"
           if [ -z "$RID" ]; then
-            RID=$(gh run list --workflow=build-ksu.yml --status=success --limit 1 --json databaseId -q '.[0].databaseId')
-            [ -n "$RID" ] || { echo 'NO_SUCCESSFUL_RUN_FOUND (run build-ksu.yml once, or fill artifact_run_id)'; exit 1; }
+            RID=$(gh run list --status=success --limit 50 --json databaseId,workflowName -q '[.[] | select(.workflowName | ascii_downcase | contains("ksu fork"))][0].databaseId' 2>/dev/null)
+            if [ -z "$RID" ]; then
+              echo 'No run matched by workflow name. Listing recent successful runs:'
+              gh run list --status=success --limit 15 --json databaseId,workflowName,createdAt -q '.[] | "\(.databaseId)  \(.workflowName)  \(.createdAt)"' || true
+              echo 'Fill artifact_run_id with the databaseId of the run that built ksu-fork-modules.'
+              exit 1
+            fi
           fi
           echo "Using artifact run: $RID"
           echo "rid=$RID" >> "$GITHUB_OUTPUT"
