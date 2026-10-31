@@ -115,14 +115,19 @@ jobs:
           export AR_aarch64_linux_android="$LLVM_BIN/llvm-ar"
           BUILTINS="$($CLANG_PATH --print-resource-dir)/lib/linux/libclang_rt.builtins-aarch64-android.a"
           SYS_LIB="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/26"
-          export RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wno-unused-command-line-argument -C link-arg=$BUILTINS -C link-arg=-L$SYS_LIB"
+          # Target-specific env wins over repo .cargo/config.toml rustflags.
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wno-unused-command-line-argument -C link-arg=$BUILTINS -C link-arg=-L$SYS_LIB"
+          export RUSTFLAGS="$CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS"
           export BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--sysroot=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot -I$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android -I$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include"
           echo "--- liblog locate ---"
-          find "$ANDROID_NDK_HOME" -name 'liblog.so' 2>/dev/null | head -5 || true
+          find "$ANDROID_NDK_HOME" -name 'liblog.so' 2>/dev/null | head -3 || true
           echo 'int main(){return 0;}' > /tmp/t.c
           SYS_LIB="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/26"
           if "$CLANG_PATH" /tmp/t.c -llog -o /tmp/t.out -L"$SYS_LIB" 2>/dev/null; then echo "LINK_LOG_OK with -L$SYS_LIB"; else echo "LINK_LOG_FAIL with -L$SYS_LIB"; fi
-          find "$ANDROID_NDK_HOME" -maxdepth 6 -type d -name 'aarch64-linux-android' 2>/dev/null | head -3 || true
+          echo "--- cargo config (may override RUSTFLAGS) ---"
+          cat "$fork/.cargo/config.toml" 2>/dev/null || true
+          cat "$fork/userspace/ksud/.cargo/config.toml" 2>/dev/null || true
+          echo 'int main(){return 0;}' > /dev/null
           for fork in ${{ inputs.ksud_for }}; do
             case "$fork" in
               finasu) repo="${{ inputs.finasu_repo }}"; br="${{ inputs.finasu_ref }}";;
