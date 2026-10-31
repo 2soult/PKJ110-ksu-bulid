@@ -1,0 +1,162 @@
+name: Build ksud only (inner 6.6.118 module)
+
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_run_id:
+        description: 'Run ID that built ksu-fork-modules (empty = latest successful build-ksu run)'
+        required: false
+        type: string
+        default: ''
+      ksud_for:
+        description: 'Space-separated forks to build matching ksud'
+        required: false
+        type: string
+        default: 'finasu next'
+      next_repo:
+        description: 'KernelSU-Next source repo'
+        required: false
+        type: string
+        default: 'https://github.com/rifsxd/KernelSU-Next.git'
+      next_ref:
+        description: 'KernelSU-Next branch (empty = repo default)'
+        required: false
+        type: string
+        default: ''
+      finasu_repo:
+        description: 'FinaSU source repo'
+        required: false
+        type: string
+        default: 'https://github.com/LyraVoid/FinaSU.git'
+      finasu_ref:
+        description: 'FinaSU branch (empty = repo default)'
+        required: false
+        type: string
+        default: ''
+      bakasu_repo:
+        description: 'BakaSU source repo'
+        required: false
+        type: string
+        default: 'https://github.com/Baka-SU/BakaSU.git'
+      bakasu_ref:
+        description: 'BakaSU branch (empty = repo default)'
+        required: false
+        type: string
+        default: ''
+      sukisu_repo:
+        description: 'SukiSU source repo'
+        required: false
+        type: string
+        default: 'https://github.com/SukiSU-Ultra/SukiSU-Ultra.git'
+      sukisu_ref:
+        description: 'SukiSU branch (empty = repo default)'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  ksud:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve artifact run
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          RID="${{ inputs.artifact_run_id }}"
+          if [ -z "$RID" ]; then
+            RID=$(gh run list --workflow=build-ksu.yml --status=success --limit 1 --json databaseId -q '.[0].databaseId')
+            [ -n "$RID" ] || { echo 'NO_SUCCESSFUL_RUN_FOUND (run build-ksu.yml once, or fill artifact_run_id)'; exit 1; }
+          fi
+          echo "Using artifact run: $RID"
+          echo "rid=$RID" >> "$GITHUB_OUTPUT"
+
+      - name: Download ksu-fork-modules artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          gh run download "${{ steps.resolve.outputs.rid }}" -n ksu-fork-modules -D modules
+          ls -l modules/
+
+      - uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r29
+
+      - name: Rust setup
+        run: |
+          rustup update stable
+          rustup target add aarch64-linux-android
+          sudo apt-get update
+          sudo apt-get install -y libclang-dev clang || true
+
+      - name: Build matching ksud (inner 6.6.118 module)
+        run: |
+          set -o pipefail
+          ANDROID_NDK_HOME="${{ steps.setup-ndk.outputs.ndk-path }}"
+          LLVM_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          export CLANG_PATH="$LLVM_BIN/aarch64-linux-android26-clang"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CLANG_PATH"
+          export CC_aarch64_linux_android="$CLANG_PATH"
+          export CXX_aarch64_linux_android="$CLANG_PATH++"
+          export AR_aarch64_linux_android="$LLVM_BIN/llvm-ar"
+          BUILTINS="$($CLANG_PATH --print-resource-dir)/lib/linux/libclang_rt.builtins-aarch64-android.a"
+          export RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wno-unused-command-line-argument -C link-arg=$BUILTINS"
+          export BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--sysroot=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot -I$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android -I$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include"
+          for fork in ${{ inputs.ksud_for }}; do
+            case "$fork" in
+              finasu) repo="${{ inputs.finasu_repo }}"; br="${{ inputs.finasu_ref }}";;
+              next)   repo="${{ inputs.next_repo }}";   br="${{ inputs.next_ref }}";;
+              bakasu) repo="${{ inputs.bakasu_repo }}"; br="${{ inputs.bakasu_ref }}";;
+              sukisu) repo="${{ inputs.sukisu_repo }}"; br="${{ inputs.sukisu_ref }}";;
+              *) echo "unknown fork $fork"; continue;;
+            esac
+            [ -n "$repo" ] || { echo "SKIP $fork: empty repo"; continue; }
+            [ -f "modules/ksu-base-$fork.ko" ] || { echo "SKIP $fork: module not found in artifact"; continue; }
+            git clone --depth 1 --branch "$br" "$repo" "$fork" 2>/dev/null || \
+            git clone --depth 1 "$repo" "$fork"
+            [ -d "$fork/userspace/ksud" ] || { echo "SKIP $fork: no userspace/ksud"; continue; }
+            git -C "$fork" log -1 --format="$fork HEAD: %H %s"
+            # inner module: named by KMI so `late-load --kmi android15-6.6` finds it
+            mkdir -p "$fork/userspace/ksud/bin/aarch64"
+            cp "modules/ksu-base-$fork.ko" "$fork/userspace/ksud/bin/aarch64/android15-6.6_kernelsu.ko"
+            # ksuinit companion (optional; binary name / target dir vary per fork)
+            if [ -d "$fork/userspace/ksuinit" ]; then
+              ( cd "$fork/userspace/ksuinit" && cargo build --target=aarch64-linux-android --release 2>&1 | tail -3 ) || { echo "KSUINIT_BUILD_FAILED $fork"; exit 1; }
+              echo "KSUINIT_BUILD_OK $fork"
+              find "$fork" -maxdepth 5 -type f -perm -111 2>/dev/null | grep -v '\.d$' | head -10 || true
+              KS=$(find "$fork" -maxdepth 6 -type f -path '*/release/*' -name 'ksuinit*' -perm -111 2>/dev/null | grep -vE '\.(yml|sh|md|json|d)$' | head -1)
+              [ -n "$KS" ] || KS=$(find "$fork" -maxdepth 6 -type f -path '*/release/*' -perm -111 2>/dev/null | grep -vE '\.(yml|sh|md|json|d)$' | head -1)
+              [ -n "$KS" ] || { echo "KSUINIT_BINARY_NOT_FOUND $fork"; exit 1; }
+              mkdir -p "$fork/userspace/ksud/bin/aarch64"
+              cp "$KS" "$fork/userspace/ksud/bin/aarch64/ksuinit" || { echo "KSUINIT_CP_FAILED $fork src=$KS"; exit 1; }
+              echo "ksuinit staged for $fork ($(basename "$KS"))"
+            fi
+            mkdir -p "$fork/userspace/ksud/bin/aarch64"
+            # lkm_image_bootstrap.S must be pre-assembled (build.rs expects .lkm_image_bootstrap.o)
+            clang --target=aarch64-linux-gnu -c -nostdlib \
+              -o "$fork/userspace/ksud/.lkm_image_bootstrap.o" \
+              "$fork/userspace/ksud/src/lkm_image_bootstrap.S" || { echo 'BOOTSTRAP_ASM_FAILED'; exit 1; }
+            ( cd "$fork/userspace/ksud" && cargo build --target=aarch64-linux-android --release 2>&1 | tee /tmp/ksud-build-$fork.log | tail -8 ) || { echo 'KSUD_BUILD_FAILED (errors below)'; grep -nE 'error|undefined|note:' /tmp/ksud-build-$fork.log | head -25; exit 1; }
+            KSD=$(find "$fork/userspace/ksud/target" "$fork/userspace/target" "$fork/target" -maxdepth 4 -type f -name 'ksud*' 2>/dev/null | grep -v '\.d$' | head -1)
+            [ -n "$KSD" ] || KSD=$(find "$fork" -maxdepth 5 -type f -perm -111 2>/dev/null | grep -v '\.d$' | head -1)
+            [ -n "$KSD" ] || { echo 'KSUD_BINARY_NOT_FOUND'; exit 1; }
+            cp "$KSD" "ksud_$fork" || { echo "KSUD_CP_FAILED src=$KSD"; exit 1; }
+            echo "built ksud_$fork ($(stat -c %s ksud_$fork) B)"
+          done
+          ls -l ksud_*
+
+      - name: Upload ksud artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ksud-matched
+          path: ksud_*
+          retention-days: 30
