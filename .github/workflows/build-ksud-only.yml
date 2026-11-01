@@ -166,9 +166,14 @@ jobs:
               -o "$fork/userspace/ksud/.lkm_image_bootstrap.o" \
               "$fork/userspace/ksud/src/lkm_image_bootstrap.S" || { echo 'BOOTSTRAP_ASM_FAILED'; exit 1; }
             ( cd "$fork/userspace/ksud" && cargo build --target=aarch64-linux-android --release 2>&1 | tee /tmp/ksud-build-$fork.log | tail -8 ) || { echo 'KSUD_BUILD_FAILED (errors below)'; grep -nE 'error|undefined|note:' /tmp/ksud-build-$fork.log | head -25; exit 1; }
-            KSD=$(find "$fork/userspace/ksud/target" "$fork/userspace/target" "$fork/target" -maxdepth 4 -type f -name 'ksud' 2>/dev/null | head -1)
+            KSD=''
+            for td in "$fork/userspace/ksud/target" "$fork/userspace/target" "$fork/target"; do
+              [ -d "$td" ] || continue
+              KSD=$(find "$td" -maxdepth 4 -type f -name 'ksud' 2>/dev/null | head -1 || true)
+              [ -n "$KSD" ] && break
+            done
             echo "KSD candidate: $KSD"
-            [ -n "$KSD" ] || KSD=$(find "$fork" -maxdepth 5 -type f -perm -111 2>/dev/null | grep -v '\.d$' | head -1)
+            [ -n "$KSD" ] || KSD=$(find "$fork" -maxdepth 5 -type f -perm -111 2>/dev/null | grep -v '\.d$' | head -1 || true)
             [ -n "$KSD" ] || { echo 'KSUD_BINARY_NOT_FOUND'; exit 1; }
             cp "$KSD" "ksud_$fork" || { echo "KSUD_CP_FAILED src=$KSD"; exit 1; }
             SZ=$(stat -c %s "ksud_$fork" 2>/dev/null || echo '?')
