@@ -91,6 +91,22 @@ jobs:
           gh run download "${{ steps.resolve.outputs.rid }}" -n ksu-fork-modules -D modules
           ls -l modules/
 
+      - name: Strip debug sections (fixes ENOEXEC on device)
+        run: |
+          set -o pipefail
+          sudo apt-get update
+          sudo apt-get install -y llvm || true
+          STRIP=$(command -v llvm-strip || command -v llvm-strip-14 || command -v llvm-strip-15)
+          [ -n "$STRIP" ] || { echo 'NO llvm-strip found'; exit 1; }
+          echo "using $STRIP"
+          mkdir -p stripped
+          for f in modules/*.ko; do
+            base=$(basename "$f")
+            "$STRIP" -d "$f" -o "stripped/$base" || { echo "STRIP_FAILED $base"; exit 1; }
+            echo "stripped $base: $(stat -c %s "$f") -> $(stat -c %s "stripped/$base") B"
+          done
+          ls -l stripped/
+
       - uses: nttld/setup-ndk@v1
         id: setup-ndk
         with:
@@ -144,7 +160,7 @@ jobs:
             git -C "$fork" log -1 --format="$fork HEAD: %H %s"
             # inner module: named by KMI so `late-load --kmi android15-6.6` finds it
             mkdir -p "$fork/userspace/ksud/bin/aarch64"
-            cp "modules/ksu-base-$fork.ko" "$fork/userspace/ksud/bin/aarch64/android15-6.6_kernelsu.ko"
+            cp "stripped/ksu-base-$fork.ko" "$fork/userspace/ksud/bin/aarch64/android15-6.6_kernelsu.ko"
             # ksuinit companion (optional; binary name / target dir vary per fork)
             if [ -d "$fork/userspace/ksuinit" ]; then
               # ksuinit runs from init: keep static crt just for it
@@ -186,4 +202,12 @@ jobs:
         with:
           name: ksud-matched
           path: ksud_*
+          retention-days: 30
+
+      - name: Upload stripped modules
+        uses: actions/upload-artifact@v4
+        with:
+          name: ksu-fork-modules-stripped
+          path: |
+            stripped/*.ko
           retention-days: 30
